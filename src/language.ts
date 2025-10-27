@@ -183,7 +183,7 @@ export const oracleSqlLanguageConfig = {
     ['{', '}'],
     ['[', ']'],
     ['(', ')'],
-  ] as [string, string][],
+  ] as Array<[string, string]>,
   autoClosingPairs: [
     { open: '{', close: '}' },
     { open: '[', close: ']' },

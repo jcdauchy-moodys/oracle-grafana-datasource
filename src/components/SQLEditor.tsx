@@ -40,7 +40,9 @@ export const SQLEditor: React.FC<SQLEditorProps> = ({
     if (!isRegistered) {
       monaco.languages.register({ id: LANGUAGE_ID });
       monaco.languages.setLanguageConfiguration(LANGUAGE_ID, oracleSqlLanguageConfig);
-      monaco.languages.setMonarchTokensProvider(LANGUAGE_ID, oracleSqlLanguageDef);
+      // Type assertion needed due to overly strict Monaco types
+      // The language definition is correct but TypeScript's structural typing is too restrictive
+      monaco.languages.setMonarchTokensProvider(LANGUAGE_ID, oracleSqlLanguageDef as any);
     }
 
     // Set up validation
