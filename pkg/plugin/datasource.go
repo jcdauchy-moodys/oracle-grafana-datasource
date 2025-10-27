@@ -181,9 +181,9 @@ func convertToTimeSeriesFrames(columns []OracleDatasourceColumn, refID string) (
 
 	// Convert time column values
 	timeValues := ConvertValueArray(timeColumn.dataType, timeColumn.values)
-	
-	// Check if we have a time array
-	timeArray, ok := timeValues.([]*time.Time)
+
+	// Check if we have a time array (ConvertValueArray returns []time.Time, not []*time.Time)
+	timeArray, ok := timeValues.([]time.Time)
 	if !ok {
 		return nil, fmt.Errorf("time column is not of time type, got: %T", timeValues)
 	}
@@ -200,8 +200,8 @@ func convertToTimeSeriesFrames(columns []OracleDatasourceColumn, refID string) (
 				continue
 			}
 			colNameLower := strings.ToLower(col.name)
-			if strings.Contains(colNameLower, "metric") || strings.Contains(colNameLower, "name") || 
-			   strings.Contains(colNameLower, "label") || strings.Contains(colNameLower, "series") {
+			if strings.Contains(colNameLower, "metric") || strings.Contains(colNameLower, "name") ||
+				strings.Contains(colNameLower, "label") || strings.Contains(colNameLower, "series") {
 				metricNameIdx = i
 				isLongFormat = true
 			} else if strings.Contains(colNameLower, "value") || col.dataType == "float64" || col.dataType == "int64" {
@@ -230,7 +230,7 @@ func convertToTimeSeriesFrames(columns []OracleDatasourceColumn, refID string) (
 }
 
 // convertWideFormat converts wide format data (timestamp, value1, value2, ...) to time series frames
-func convertWideFormat(timeValues []*time.Time, columns []OracleDatasourceColumn, timeColumnIdx int, refID string) data.Frames {
+func convertWideFormat(timeValues []time.Time, columns []OracleDatasourceColumn, timeColumnIdx int, refID string) data.Frames {
 	var frames data.Frames
 
 	for i, col := range columns {
@@ -240,10 +240,10 @@ func convertWideFormat(timeValues []*time.Time, columns []OracleDatasourceColumn
 
 		// Create a frame for each value column
 		frame := data.NewFrame(col.name)
-		
-		// Add time field
-		frame.Fields = append(frame.Fields, data.NewField("time", nil, timeValues))
-		
+
+		// Add time field (convert to pointers as required by Grafana)
+		frame.Fields = append(frame.Fields, data.NewField("time", nil, convertTimeSliceToPointers(timeValues)))
+
 		// Add value field
 		values := ConvertValueArray(col.dataType, col.values)
 		frame.Fields = append(frame.Fields, data.NewField(col.name, nil, values))
@@ -260,10 +260,10 @@ func convertWideFormat(timeValues []*time.Time, columns []OracleDatasourceColumn
 }
 
 // convertLongFormat converts long format data (timestamp, metric_name, value) to time series frames
-func convertLongFormat(timeValues []*time.Time, columns []OracleDatasourceColumn, timeColumnIdx, metricNameIdx, valueIdx int, refID string) data.Frames {
+func convertLongFormat(timeValues []time.Time, columns []OracleDatasourceColumn, timeColumnIdx, metricNameIdx, valueIdx int, refID string) data.Frames {
 	// Group by metric name
 	seriesMap := make(map[string]*seriesData)
-	
+
 	metricNames := columns[metricNameIdx].values
 	values := columns[valueIdx].values
 
@@ -273,15 +273,15 @@ func convertLongFormat(timeValues []*time.Time, columns []OracleDatasourceColumn
 		}
 
 		metricName := fmt.Sprintf("%v", metricNames[i])
-		
+
 		if _, exists := seriesMap[metricName]; !exists {
 			seriesMap[metricName] = &seriesData{
 				name:   metricName,
-				times:  []*time.Time{},
+				times:  []time.Time{},
 				values: []interface{}{},
 			}
 		}
-		
+
 		seriesMap[metricName].times = append(seriesMap[metricName].times, timeValues[i])
 		seriesMap[metricName].values = append(seriesMap[metricName].values, values[i])
 	}
@@ -292,10 +292,10 @@ func convertLongFormat(timeValues []*time.Time, columns []OracleDatasourceColumn
 
 	for _, series := range seriesMap {
 		frame := data.NewFrame(series.name)
-		
-		// Add time field
-		frame.Fields = append(frame.Fields, data.NewField("time", nil, series.times))
-		
+
+		// Add time field (convert to pointers as required by Grafana)
+		frame.Fields = append(frame.Fields, data.NewField("time", nil, convertTimeSliceToPointers(series.times)))
+
 		// Add value field
 		convertedValues := ConvertValueArray(valueDataType, series.values)
 		frame.Fields = append(frame.Fields, data.NewField(series.name, nil, convertedValues))
@@ -314,6 +314,15 @@ func convertLongFormat(timeValues []*time.Time, columns []OracleDatasourceColumn
 // Helper struct for organizing series data in long format
 type seriesData struct {
 	name   string
-	times  []*time.Time
+	times  []time.Time
 	values []interface{}
+}
+
+// convertTimeSliceToPointers converts []time.Time to []*time.Time as required by Grafana data frames
+func convertTimeSliceToPointers(times []time.Time) []*time.Time {
+	result := make([]*time.Time, len(times))
+	for i := range times {
+		result[i] = &times[i]
+	}
+	return result
 }

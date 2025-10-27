@@ -3,9 +3,9 @@ package plugin
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"time"
-	"fmt"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
@@ -27,9 +27,9 @@ type OracleDatasourceInfo struct {
 }
 
 type OracleDatasourceColumn struct {
-	name   string
+	name     string
 	dataType string
-	values []any
+	values   []any
 }
 
 type OracleDatasourceResult struct {
@@ -65,15 +65,15 @@ func (q *OracleDatasourceQuery) MakeQuery(c *OracleDatasourceConnection, from ti
 			result.err = err
 			return result
 		} else {
-		    for _, column := range columnTypes {
-		        name := column.Name()
-		        typename := GetDataTypeByType(column.ScanType())
-		        log.DefaultLogger.Debug(fmt.Sprintf("column: %v, dataType:%v", name, typename))
+			for _, column := range columnTypes {
+				name := column.Name()
+				typename := GetDataTypeByType(column.ScanType())
+				log.DefaultLogger.Debug(fmt.Sprintf("column: %v, dataType:%v", name, typename))
 
-		        typeMap[name] = typename
-		        columns = append(columns, name)
-		        result.columns = append(result.columns, OracleDatasourceColumn{name, typename, []any{}})
-		    }
+				typeMap[name] = typename
+				columns = append(columns, name)
+				result.columns = append(result.columns, OracleDatasourceColumn{name, typename, []any{}})
+			}
 		}
 		log.DefaultLogger.Debug("Oracle query fetch: ", "columns", columns)
 
@@ -91,8 +91,8 @@ func (q *OracleDatasourceQuery) MakeQuery(c *OracleDatasourceConnection, from ti
 			}
 			for index, scannedValue := range sacnValues {
 				if scannedValue != nil {
-				    dataType := typeMap[result.columns[index].name]
-				    convertedValue := ConvertValue(scannedValue, dataType)
+					dataType := typeMap[result.columns[index].name]
+					convertedValue := ConvertValue(scannedValue, dataType)
 					result.columns[index].values = append(result.columns[index].values, convertedValue)
 				} else {
 					result.columns[index].values = append(result.columns[index].values, nil)
