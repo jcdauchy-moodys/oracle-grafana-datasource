@@ -107,7 +107,6 @@ export const oracleSqlLanguageDef = {
       { include: '@numbers' },
       { include: '@strings' },
       { include: '@complexIdentifiers' },
-      { include: '@scopes' },
       [/[;,.]/, 'delimiter'],
       [/[()]/, '@brackets'],
       [
@@ -124,7 +123,9 @@ export const oracleSqlLanguageDef = {
       ],
       [/[<>=!%&+\-*/|~^]/, 'operator'],
     ],
-    whitespace: [[/\s+/, 'white']],
+    whitespace: [
+      [/\s+/, 'white']
+    ],
     comments: [
       [/--+.*/, 'comment'],
       [/\/\*/, { token: 'comment.quote', next: '@comment' }],
@@ -159,15 +160,13 @@ export const oracleSqlLanguageDef = {
       [/''/, 'string'],
       [/'/, { token: 'string', next: '@pop' }],
     ],
-    complexIdentifiers: [[/"/, { token: 'identifier.quote', next: '@quotedIdentifier' }]],
+    complexIdentifiers: [
+      [/"/, { token: 'identifier.quote', next: '@quotedIdentifier' }]
+    ],
     quotedIdentifier: [
       [/[^"]+/, 'identifier'],
       [/""/, 'identifier'],
       [/"/, { token: 'identifier.quote', next: '@pop' }],
-    ],
-    scopes: [
-      // For schema.table.column syntax
-      // This is handled by the default identifier matching
     ],
   },
 };
@@ -178,13 +177,13 @@ export const oracleSqlLanguageDef = {
 export const oracleSqlLanguageConfig = {
   comments: {
     lineComment: '--',
-    blockComment: ['/*', '*/'],
+    blockComment: ['/*', '*/'] as [string, string],
   },
   brackets: [
     ['{', '}'],
     ['[', ']'],
     ['(', ')'],
-  ],
+  ] as [string, string][],
   autoClosingPairs: [
     { open: '{', close: '}' },
     { open: '[', close: ']' },

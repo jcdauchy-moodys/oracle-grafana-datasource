@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { CodeEditor, Monaco, monacoTypes } from '@grafana/ui';
 import { oracleSqlLanguageDef, oracleSqlLanguageConfig } from '../language';
 import { validateOracleQuery } from '../validation';
