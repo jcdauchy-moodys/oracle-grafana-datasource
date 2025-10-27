@@ -3,6 +3,11 @@ import { DataQuery, DataSourceJsonData } from '@grafana/schema';
 export interface MyQuery extends DataQuery {
   o_sql?: string;
   o_parsed?: string;
+  format?: 'table' | 'timeseries';
+  // Connection override fields (optional - to override datasource connection settings)
+  o_override_hostname?: string;
+  o_override_port?: number;
+  o_override_service?: string;
 };
 
 /**

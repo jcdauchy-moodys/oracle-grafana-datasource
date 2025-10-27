@@ -3,6 +3,7 @@ package plugin
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"time"
 
@@ -11,12 +12,16 @@ import (
 )
 
 type OracleDatasourceQuery struct {
-	Datasource   OracleDatasourceInfo
-	DatasourceId int64
-	IntervalMs   int64
-	O_parsed     string
-	O_sql        string
-	RefId        string
+	Datasource          OracleDatasourceInfo
+	DatasourceId        int64
+	IntervalMs          int64
+	O_parsed            string
+	O_sql               string
+	RefId               string
+	Format              string
+	O_override_hostname string
+	O_override_port     int
+	O_override_service  string
 }
 
 type OracleDatasourceInfo struct {
@@ -25,8 +30,9 @@ type OracleDatasourceInfo struct {
 }
 
 type OracleDatasourceColumn struct {
-	name   string
-	values []string
+	name     string
+	dataType string
+	values   []any
 }
 
 type OracleDatasourceResult struct {
@@ -54,14 +60,22 @@ func (q *OracleDatasourceQuery) MakeQuery(c *OracleDatasourceConnection, from ti
 		}
 		defer rows.Close()
 
-		columns, err := rows.Columns()
+		columnTypes, err := rows.ColumnTypes()
+		columns := []string{}
+		typeMap := make(map[string]string)
 		if err != nil {
 			log.DefaultLogger.Error("Error fetching columns: ", err)
 			result.err = err
 			return result
 		} else {
-			for _, name := range columns {
-				result.columns = append(result.columns, OracleDatasourceColumn{name, []string{}})
+			for _, column := range columnTypes {
+				name := column.Name()
+				typename := GetDataTypeByType(column.ScanType())
+				log.DefaultLogger.Debug(fmt.Sprintf("column: %v, dataType:%v", name, typename))
+
+				typeMap[name] = typename
+				columns = append(columns, name)
+				result.columns = append(result.columns, OracleDatasourceColumn{name, typename, []any{}})
 			}
 		}
 		log.DefaultLogger.Debug("Oracle query fetch: ", "columns", columns)
@@ -80,9 +94,11 @@ func (q *OracleDatasourceQuery) MakeQuery(c *OracleDatasourceConnection, from ti
 			}
 			for index, scannedValue := range sacnValues {
 				if scannedValue != nil {
-					result.columns[index].values = append(result.columns[index].values, string(scannedValue))
+					dataType := typeMap[result.columns[index].name]
+					convertedValue := ConvertValue(scannedValue, dataType)
+					result.columns[index].values = append(result.columns[index].values, convertedValue)
 				} else {
-					result.columns[index].values = append(result.columns[index].values, "(null)")
+					result.columns[index].values = append(result.columns[index].values, nil)
 				}
 			}
 		}
@@ -104,4 +120,52 @@ func (q *OracleDatasourceQuery) ParseDatasourceQuery(query backend.DataQuery) er
 		log.DefaultLogger.Error("Error parsing Oracle query: ", err)
 	}
 	return err
+}
+
+// HasConnectionOverrides checks if any connection override fields are set
+func (q *OracleDatasourceQuery) HasConnectionOverrides() bool {
+	return q.O_override_hostname != "" || q.O_override_port != 0 || q.O_override_service != ""
+}
+
+// MakeQueryWithOverride executes a query using an override connection
+func (q *OracleDatasourceQuery) MakeQueryWithOverride(baseSettings *OracleDatasourceSettings, from time.Time, to time.Time) OracleDatasourceResult {
+	result := OracleDatasourceResult{nil, []OracleDatasourceColumn{}}
+
+	// Create override settings based on base settings
+	overrideSettings := *baseSettings
+
+	// Clear connection string so individual parameters are used
+	// Connection string takes precedence, so we must clear it when using overrides
+	overrideSettings.O_connStr = ""
+
+	// Apply overrides
+	if q.O_override_hostname != "" {
+		overrideSettings.O_hostname = q.O_override_hostname
+	}
+	if q.O_override_port != 0 {
+		overrideSettings.O_port = q.O_override_port
+	}
+	if q.O_override_service != "" {
+		overrideSettings.O_service = q.O_override_service
+	}
+
+	log.DefaultLogger.Debug("Using connection overrides",
+		"hostname", overrideSettings.O_hostname,
+		"port", overrideSettings.O_port,
+		"service", overrideSettings.O_service)
+
+	// Create temporary connection with override settings
+	tempConnection := OracleDatasourceConnection{}
+	err := tempConnection.Connect(&overrideSettings)
+	if err != nil {
+		log.DefaultLogger.Error("Error connecting with overrides: ", err)
+		result.err = err
+		return result
+	}
+	defer tempConnection.Disconnect()
+
+	// Execute query using the temporary connection
+	result = q.MakeQuery(&tempConnection, from, to)
+
+	return result
 }
