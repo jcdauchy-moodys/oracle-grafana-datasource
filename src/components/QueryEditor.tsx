@@ -1,10 +1,11 @@
 import React, { FormEvent, useState } from 'react';
-import { Label, TextArea, Select, InlineField, InlineFieldRow, Input, Collapse } from '@grafana/ui';
+import { Label, Select, InlineField, InlineFieldRow, Input, Collapse } from '@grafana/ui';
 import { QueryEditorProps, SelectableValue } from '@grafana/data';
 
 import { DataSource } from '../datasource';
 import { interpolate } from '../interpolate';
 import { MyDataSourceOptions, MyQuery } from '../types';
+import { SQLEditor } from './SQLEditor';
 
 type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
@@ -18,11 +19,11 @@ export function QueryEditor({ onChange, query }: Props) {
     !!(query.o_override_hostname || query.o_override_port || query.o_override_service)
   );
 
-  const onSQLChange = (event: FormEvent<HTMLTextAreaElement>) => {
+  const onSQLChange = (value: string) => {
     onChange({
       ...query,
-      o_sql: event.currentTarget.value,
-      o_parsed: interpolate(event.currentTarget.value ?? '')
+      o_sql: value,
+      o_parsed: interpolate(value ?? '')
     });
   }
 
@@ -130,10 +131,17 @@ export function QueryEditor({ onChange, query }: Props) {
           minWidth: '480px',
           padding: '10px 5px'
         }}>
-          <Label description='Query to make on an Oracle database'>
+          <Label description='Query to make on an Oracle database with syntax highlighting and validation'>
             Query
           </Label>
-          <TextArea onChange={onSQLChange} placeholder='SELECT ash.* \n FROM v$active_session_history ash \nWHERE  ash.SAMPLE_TIME BETWEEN $__from AND $__to' rows={12} value={query.o_sql} required width='100%' />
+          <SQLEditor 
+            value={query.o_sql || ''} 
+            onChange={onSQLChange}
+            height="300px"
+            placeholder='SELECT ash.* \n FROM v$active_session_history ash \nWHERE  ash.SAMPLE_TIME BETWEEN $__from AND $__to'
+            showLineNumbers={true}
+            showMiniMap={false}
+          />
         </div>
         <div style={{
           flexGrow: 1,
@@ -143,7 +151,14 @@ export function QueryEditor({ onChange, query }: Props) {
           <Label description='How the query will be executed on the database, using all the available variables'>
             Parsed Query
           </Label>
-          <TextArea readOnly rows={12} value={interpolate(query.o_sql ?? '')} width='100%' />
+          <SQLEditor 
+            value={interpolate(query.o_sql ?? '')} 
+            onChange={() => {}} 
+            readOnly={true}
+            height="300px"
+            showLineNumbers={true}
+            showMiniMap={false}
+          />
         </div>
       </div>
     </div>
