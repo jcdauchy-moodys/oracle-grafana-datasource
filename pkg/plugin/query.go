@@ -134,6 +134,10 @@ func (q *OracleDatasourceQuery) MakeQueryWithOverride(baseSettings *OracleDataso
 	// Create override settings based on base settings
 	overrideSettings := *baseSettings
 
+	// Clear connection string so individual parameters are used
+	// Connection string takes precedence, so we must clear it when using overrides
+	overrideSettings.O_connStr = ""
+
 	// Apply overrides
 	if q.O_override_hostname != "" {
 		overrideSettings.O_hostname = q.O_override_hostname
