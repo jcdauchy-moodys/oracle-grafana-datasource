@@ -115,7 +115,16 @@ func (d *OracleDatasource) query(_ context.Context, pCtx backend.PluginContext, 
 		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("Error parsing query: %v", err.Error()))
 	}
 
-	result := queryObj.MakeQuery(&d.connection, query.TimeRange.From, query.TimeRange.To)
+	var result OracleDatasourceResult
+
+	// Check if connection overrides are specified
+	if queryObj.HasConnectionOverrides() {
+		log.DefaultLogger.Debug("Query has connection overrides, using temporary connection")
+		result = queryObj.MakeQueryWithOverride(&d.settings, query.TimeRange.From, query.TimeRange.To)
+	} else {
+		// Use the default datasource connection
+		result = queryObj.MakeQuery(&d.connection, query.TimeRange.From, query.TimeRange.To)
+	}
 
 	if result.err != nil {
 		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("Error executing query: %v", result.err.Error()))

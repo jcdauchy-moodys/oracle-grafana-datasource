@@ -1,5 +1,5 @@
-import React, { FormEvent } from 'react';
-import { Label, TextArea, Select, InlineField, InlineFieldRow } from '@grafana/ui';
+import React, { FormEvent, useState } from 'react';
+import { Label, TextArea, Select, InlineField, InlineFieldRow, Input, Collapse } from '@grafana/ui';
 import { QueryEditorProps, SelectableValue } from '@grafana/data';
 
 import { DataSource } from '../datasource';
@@ -14,6 +14,10 @@ const FORMAT_OPTIONS: Array<SelectableValue<string>> = [
 ];
 
 export function QueryEditor({ onChange, query }: Props) {
+  const [showConnectionOverrides, setShowConnectionOverrides] = useState(
+    !!(query.o_override_hostname || query.o_override_port || query.o_override_service)
+  );
+
   const onSQLChange = (event: FormEvent<HTMLTextAreaElement>) => {
     onChange({
       ...query,
@@ -29,6 +33,28 @@ export function QueryEditor({ onChange, query }: Props) {
     });
   }
 
+  const onOverrideHostnameChange = (event: FormEvent<HTMLInputElement>) => {
+    onChange({
+      ...query,
+      o_override_hostname: event.currentTarget.value || undefined
+    });
+  }
+
+  const onOverridePortChange = (event: FormEvent<HTMLInputElement>) => {
+    const port = parseInt(event.currentTarget.value, 10);
+    onChange({
+      ...query,
+      o_override_port: isNaN(port) ? undefined : port
+    });
+  }
+
+  const onOverrideServiceChange = (event: FormEvent<HTMLInputElement>) => {
+    onChange({
+      ...query,
+      o_override_service: event.currentTarget.value || undefined
+    });
+  }
+
   return (
     <div>
       <InlineFieldRow>
@@ -41,6 +67,57 @@ export function QueryEditor({ onChange, query }: Props) {
           />
         </InlineField>
       </InlineFieldRow>
+      
+      <Collapse
+        label="Connection Overrides (Optional)"
+        isOpen={showConnectionOverrides}
+        onToggle={() => setShowConnectionOverrides(!showConnectionOverrides)}
+        collapsible
+      >
+        <InlineFieldRow>
+          <InlineField 
+            label="Hostname" 
+            labelWidth={20} 
+            tooltip="Override the hostname from datasource settings. Uses datasource credentials."
+          >
+            <Input
+              value={query.o_override_hostname || ''}
+              onChange={onOverrideHostnameChange}
+              placeholder="e.g., oracle-prod.example.com"
+              width={40}
+            />
+          </InlineField>
+        </InlineFieldRow>
+        <InlineFieldRow>
+          <InlineField 
+            label="Port" 
+            labelWidth={20} 
+            tooltip="Override the port from datasource settings"
+          >
+            <Input
+              type="number"
+              value={query.o_override_port || ''}
+              onChange={onOverridePortChange}
+              placeholder="e.g., 1521"
+              width={20}
+            />
+          </InlineField>
+        </InlineFieldRow>
+        <InlineFieldRow>
+          <InlineField 
+            label="Service Name" 
+            labelWidth={20} 
+            tooltip="Override the service name from datasource settings"
+          >
+            <Input
+              value={query.o_override_service || ''}
+              onChange={onOverrideServiceChange}
+              placeholder="e.g., ORCL"
+              width={40}
+            />
+          </InlineField>
+        </InlineFieldRow>
+      </Collapse>
       <div style={{
         alignItems: 'stretch',
         display: 'flex',
