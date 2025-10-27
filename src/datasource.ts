@@ -67,6 +67,7 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
   getDefaultQuery(_: CoreApp): Partial<MyQuery> {
     return {
       o_sql: 'SELECT * \n FROM SYS.races \nWHERE data BETWEEN $__from AND $__to',
+      format: 'table',
     }
   }
 }

@@ -18,6 +18,7 @@ type OracleDatasourceQuery struct {
 	O_parsed     string
 	O_sql        string
 	RefId        string
+	Format       string
 }
 
 type OracleDatasourceInfo struct {

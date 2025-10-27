@@ -3,6 +3,7 @@ import { DataQuery, DataSourceJsonData } from '@grafana/schema';
 export interface MyQuery extends DataQuery {
   o_sql?: string;
   o_parsed?: string;
+  format?: 'table' | 'timeseries';
 };
 
 /**

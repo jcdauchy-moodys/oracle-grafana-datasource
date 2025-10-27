@@ -3,6 +3,8 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
@@ -115,19 +117,203 @@ func (d *OracleDatasource) query(_ context.Context, pCtx backend.PluginContext, 
 
 	result := queryObj.MakeQuery(&d.connection, query.TimeRange.From, query.TimeRange.To)
 
-	// create data frame response.
-	// For an overview on data frames and how grafana handles them:
-	// https://grafana.com/docs/grafana/latest/developers/plugins/data-frames/
-	frame := data.NewFrame("response")
+	if result.err != nil {
+		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("Error executing query: %v", result.err.Error()))
+	}
 
-	// add fields.
-	for _, column := range result.columns {
-		values := ConvertValueArray(column.dataType, column.values)
-		frame.Fields = append(frame.Fields, data.NewField(column.name, nil, values))
+	// Determine format (default to table if not specified)
+	format := queryObj.Format
+	if format == "" {
+		format = "table"
+	}
+
+	var frames data.Frames
+
+	if format == "timeseries" {
+		// Convert to timeseries format
+		frames, err = convertToTimeSeriesFrames(result.columns, query.RefID)
+		if err != nil {
+			return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("Error converting to timeseries: %v", err.Error()))
+		}
+	} else {
+		// Default table format
+		frame := data.NewFrame("response")
+		for _, column := range result.columns {
+			values := ConvertValueArray(column.dataType, column.values)
+			frame.Fields = append(frame.Fields, data.NewField(column.name, nil, values))
+		}
+		frames = append(frames, frame)
 	}
 
 	// add the frames to the response.
-	response.Frames = append(response.Frames, frame)
+	response.Frames = frames
 
 	return response
+}
+
+// convertToTimeSeriesFrames converts query results to time series format
+// Supports two formats:
+// 1. Wide format: timestamp, metric1, metric2, ... (one row per time point)
+// 2. Long format: timestamp, metric_name, value (multiple rows per time point)
+func convertToTimeSeriesFrames(columns []OracleDatasourceColumn, refID string) (data.Frames, error) {
+	if len(columns) == 0 {
+		return nil, fmt.Errorf("no columns in result set")
+	}
+
+	// Find time column (first column with time/timestamp in name or first time.Time column)
+	timeColumnIdx := -1
+	for i, col := range columns {
+		colNameLower := strings.ToLower(col.name)
+		if strings.Contains(colNameLower, "time") || strings.Contains(colNameLower, "date") || col.dataType == "time" {
+			timeColumnIdx = i
+			break
+		}
+	}
+
+	if timeColumnIdx == -1 {
+		return nil, fmt.Errorf("no time column found in result set. Time column must contain 'time' or 'date' in its name")
+	}
+
+	timeColumn := columns[timeColumnIdx]
+	if len(timeColumn.values) == 0 {
+		return nil, fmt.Errorf("time column has no values")
+	}
+
+	// Convert time column values
+	timeValues := ConvertValueArray(timeColumn.dataType, timeColumn.values)
+	
+	// Check if we have a time array
+	timeArray, ok := timeValues.([]*time.Time)
+	if !ok {
+		return nil, fmt.Errorf("time column is not of time type, got: %T", timeValues)
+	}
+
+	// Detect format: if we have exactly 3 columns and one is named something like 'metric', 'name', 'label', it's long format
+	// Otherwise, it's wide format
+	isLongFormat := false
+	metricNameIdx := -1
+	valueIdx := -1
+
+	if len(columns) == 3 {
+		for i, col := range columns {
+			if i == timeColumnIdx {
+				continue
+			}
+			colNameLower := strings.ToLower(col.name)
+			if strings.Contains(colNameLower, "metric") || strings.Contains(colNameLower, "name") || 
+			   strings.Contains(colNameLower, "label") || strings.Contains(colNameLower, "series") {
+				metricNameIdx = i
+				isLongFormat = true
+			} else if strings.Contains(colNameLower, "value") || col.dataType == "float64" || col.dataType == "int64" {
+				valueIdx = i
+			}
+		}
+		// If we found both metric name and value columns, it's long format
+		if metricNameIdx != -1 && valueIdx != -1 {
+			isLongFormat = true
+		} else {
+			isLongFormat = false
+		}
+	}
+
+	var frames data.Frames
+
+	if isLongFormat {
+		// Long format: convert to multiple series
+		frames = convertLongFormat(timeArray, columns, timeColumnIdx, metricNameIdx, valueIdx, refID)
+	} else {
+		// Wide format: each column (except time) becomes a series
+		frames = convertWideFormat(timeArray, columns, timeColumnIdx, refID)
+	}
+
+	return frames, nil
+}
+
+// convertWideFormat converts wide format data (timestamp, value1, value2, ...) to time series frames
+func convertWideFormat(timeValues []*time.Time, columns []OracleDatasourceColumn, timeColumnIdx int, refID string) data.Frames {
+	var frames data.Frames
+
+	for i, col := range columns {
+		if i == timeColumnIdx {
+			continue // Skip time column
+		}
+
+		// Create a frame for each value column
+		frame := data.NewFrame(col.name)
+		
+		// Add time field
+		frame.Fields = append(frame.Fields, data.NewField("time", nil, timeValues))
+		
+		// Add value field
+		values := ConvertValueArray(col.dataType, col.values)
+		frame.Fields = append(frame.Fields, data.NewField(col.name, nil, values))
+
+		// Set frame metadata for time series
+		frame.Meta = &data.FrameMeta{
+			PreferredVisualization: data.VisTypeGraph,
+		}
+
+		frames = append(frames, frame)
+	}
+
+	return frames
+}
+
+// convertLongFormat converts long format data (timestamp, metric_name, value) to time series frames
+func convertLongFormat(timeValues []*time.Time, columns []OracleDatasourceColumn, timeColumnIdx, metricNameIdx, valueIdx int, refID string) data.Frames {
+	// Group by metric name
+	seriesMap := make(map[string]*seriesData)
+	
+	metricNames := columns[metricNameIdx].values
+	values := columns[valueIdx].values
+
+	for i := 0; i < len(timeValues); i++ {
+		if i >= len(metricNames) || i >= len(values) {
+			break
+		}
+
+		metricName := fmt.Sprintf("%v", metricNames[i])
+		
+		if _, exists := seriesMap[metricName]; !exists {
+			seriesMap[metricName] = &seriesData{
+				name:   metricName,
+				times:  []*time.Time{},
+				values: []interface{}{},
+			}
+		}
+		
+		seriesMap[metricName].times = append(seriesMap[metricName].times, timeValues[i])
+		seriesMap[metricName].values = append(seriesMap[metricName].values, values[i])
+	}
+
+	// Convert to frames
+	var frames data.Frames
+	valueDataType := columns[valueIdx].dataType
+
+	for _, series := range seriesMap {
+		frame := data.NewFrame(series.name)
+		
+		// Add time field
+		frame.Fields = append(frame.Fields, data.NewField("time", nil, series.times))
+		
+		// Add value field
+		convertedValues := ConvertValueArray(valueDataType, series.values)
+		frame.Fields = append(frame.Fields, data.NewField(series.name, nil, convertedValues))
+
+		// Set frame metadata for time series
+		frame.Meta = &data.FrameMeta{
+			PreferredVisualization: data.VisTypeGraph,
+		}
+
+		frames = append(frames, frame)
+	}
+
+	return frames
+}
+
+// Helper struct for organizing series data in long format
+type seriesData struct {
+	name   string
+	times  []*time.Time
+	values []interface{}
 }
